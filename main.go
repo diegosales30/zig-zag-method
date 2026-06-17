@@ -303,6 +303,328 @@
 // As 4 táticas 
 // (Caos Absoluto, Zig-Zag Crescente, Zig-Zag Decrescente e Onda Cruzada)
 // serão distribuídas como cartas em uma mesa (Round-Robin) para o número de núcleos que você escolher.
+// package main
+
+// import (
+// 	"bufio"
+// 	"crypto/sha256"
+// 	"fmt"
+// 	"hash"
+// 	"math/big"
+// 	"math/rand"
+// 	"os"
+// 	"os/signal"
+// 	"runtime"
+// 	"strconv"
+// 	"strings"
+// 	"sync"
+// 	"sync/atomic"
+// 	"syscall"
+// 	"time"
+
+// 	"github.com/btcsuite/btcd/btcutil/base58"
+// 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+// 	"golang.org/x/crypto/ripemd160"
+// )
+
+// const (
+// 	Reset  = "\033[0m"
+// 	Green  = "\033[32m"
+// 	Yellow = "\033[33m"
+// 	Cyan   = "\033[36m"
+// 	Red    = "\033[31m"
+// )
+
+// var encontrada atomic.Uint32
+// var chavesTestadas atomic.Uint64
+
+// type Alvo struct {
+// 	EnderecoTarget string
+// 	TargetPKH      [20]byte
+// 	RangeMin       *big.Int
+// 	RangeMax       *big.Int
+// 	RangeLen       *big.Int // O tamanho total do labirinto (Max - Min)
+// }
+
+// // Assinatura padrão para as rotas das formigas
+// type TaticaFormiga func(alvo Alvo, wg *sync.WaitGroup, seed int64, formigaID int)
+
+// func main() {
+// 	fmt.Print("\033[H\033[2J")
+// 	fmt.Println(Yellow + "=======================================================")
+// 	fmt.Println("   PROTOCOLO COLMEIA V2: ZIG-ZAG ESTOCÁSTICO MULTICORE ")
+// 	fmt.Println("=======================================================" + Reset)
+
+// 	// 1. Detecção de Hardware no Metal Nu
+// 	numCores := runtime.NumCPU()
+// 	fmt.Printf("%s[HARDWARE DETECTADO]%s %d Núcleos/Threads de Processamento\n\n", Cyan, Reset, numCores)
+
+// 	reader := bufio.NewScanner(os.Stdin)
+
+// 	fmt.Printf("%s[1] Quantos núcleos deseja engajar? (1 a %d):%s ", Cyan, numCores, Reset)
+// 	reader.Scan()
+// 	threadCount, err := strconv.Atoi(strings.TrimSpace(reader.Text()))
+// 	if err != nil || threadCount < 1 {
+// 		threadCount = 1 // Proteção contra entradas inválidas
+// 	}
+
+// 	fmt.Printf("%s[2] Endereço BTC do Puzzle:%s ", Cyan, Reset)
+// 	reader.Scan()
+// 	endereco := strings.TrimSpace(reader.Text())
+
+// 	fmt.Printf("%s[3] Range Mínimo (Hex):%s ", Cyan, Reset)
+// 	reader.Scan()
+// 	minHex := strings.TrimSpace(reader.Text())
+
+// 	fmt.Printf("%s[4] Range Máximo (Hex):%s ", Cyan, Reset)
+// 	reader.Scan()
+// 	maxHex := strings.TrimSpace(reader.Text())
+
+// 	fmt.Printf("\n%sDeseja injetar as Formigas no Labirinto de Caos? (Y/N):%s ", Yellow, Reset)
+// 	reader.Scan()
+// 	if strings.ToLower(strings.TrimSpace(reader.Text())) != "y" {
+// 		return
+// 	}
+
+// 	decoded, _, err := base58.CheckDecode(endereco)
+// 	if err != nil || len(decoded) != 20 {
+// 		fmt.Println(Red + "[ERRO] Endereço Bitcoin inválido ou não suportado!" + Reset)
+// 		return
+// 	}
+// 	var targetPKH [20]byte
+// 	copy(targetPKH[:], decoded)
+
+// 	minKey := new(big.Int)
+// 	maxKey := new(big.Int)
+// 	minKey.SetString(minHex, 16)
+// 	maxKey.SetString(maxHex, 16)
+
+// 	// Calcula o tamanho real do terreno matemático
+// 	rangeLen := new(big.Int).Sub(maxKey, minKey)
+
+// 	alvo := Alvo{
+// 		EnderecoTarget: endereco,
+// 		TargetPKH:      targetPKH,
+// 		RangeMin:       minKey,
+// 		RangeMax:       maxKey,
+// 		RangeLen:       rangeLen,
+// 	}
+
+// 	c := make(chan os.Signal, 1)
+// 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+// 	go func() {
+// 		<-c
+// 		encontrada.Store(1)
+// 		fmt.Println("\n\n" + Red + "[!] RETIRADA TÁTICA ACIONADA." + Reset)
+// 		os.Exit(0)
+// 	}()
+
+// 	startTime := time.Now()
+// 	var wg sync.WaitGroup
+
+// 	go painelMetricas(startTime)
+
+// 	// Arsenal de Táticas Estocásticas
+// 	taticas := []TaticaFormiga{
+// 		formigaCaosAbsoluto,
+// 		formigaZigZagCrescente,
+// 		formigaZigZagDecrescente,
+// 		formigaOndaCruzada,
+// 	}
+
+// 	// 2. Lançamento com Sementes independentes (Timestamp Mestre)
+// 	sementeMestre := time.Now().UnixNano()
+
+// 	// 3. Distribuição das Threads (Round-Robin)
+// 	for i := 0; i < threadCount; i++ {
+// 		wg.Add(1)
+// 		taticaSelecionada := taticas[i%len(taticas)] // Distribui as táticas uniformemente
+// 		sementeIndividual := sementeMestre + int64(i*1000) // Semente temporal exclusiva
+		
+// 		go taticaSelecionada(alvo, &wg, sementeIndividual, i)
+// 	}
+
+// 	wg.Wait()
+
+// 	if encontrada.Load() == 0 {
+// 		fmt.Printf("\n%s[INFO] Labirinto infinito interrompido.%s\n", Yellow, Reset)
+// 	}
+// }
+
+// func painelMetricas(start time.Time) {
+// 	for encontrada.Load() == 0 {
+// 		time.Sleep(1 * time.Second)
+// 		if encontrada.Load() != 0 { break }
+// 		elapsed := time.Since(start).Seconds()
+// 		chaves := chavesTestadas.Load()
+// 		speed := float64(chaves) / elapsed
+
+// 		fmt.Printf("\r%sPoder Estocástico:%s %.0f chaves/s | %sTempo:%s %.1fs ",
+// 			Yellow, Reset, speed, Cyan, Reset, elapsed)
+// 	}
+// }
+
+// // ---------------------------------------------------------------------
+// // NÚCLEO DE MATEMÁTICA BARE-METAL
+// // ---------------------------------------------------------------------
+
+// func verificarColisaoReal(privKey *big.Int, targetPKH [20]byte, rmd160 hash.Hash) bool {
+// 	privBytes := privKey.Bytes()
+// 	var padded [32]byte
+// 	copy(padded[32-len(privBytes):], privBytes)
+
+// 	priv := secp256k1.PrivKeyFromBytes(padded[:])
+// 	pub := priv.PubKey()
+// 	pubBytes := pub.SerializeCompressed()
+
+// 	sha := sha256.Sum256(pubBytes)
+// 	rmd160.Reset()
+// 	rmd160.Write(sha[:])
+// 	pkh := rmd160.Sum(nil)
+
+// 	for i := 0; i < 20; i++ {
+// 		if pkh[i] != targetPKH[i] {
+// 			return false
+// 		}
+// 	}
+// 	return true
+// }
+
+// func salvarChaveEncontrada(privKey *big.Int, endereco string, formigaID int) {
+// 	encontrada.Store(1) 
+// 	privHex := fmt.Sprintf("%064x", privKey)
+// 	fmt.Printf("\n\n%s╔══════════════════════════════════════════════════════════╗%s\n", Green, Reset)
+// 	fmt.Printf("%s║ RAINHA CAPTURADA NO CAOS PELA FORMIGA [%d]!              ║%s\n", Green, formigaID, Reset)
+// 	fmt.Printf("%s║ ENDEREÇO: %-46s ║%s\n", Green, endereco, Reset)
+// 	fmt.Printf("%s║ CHAVE: %-49s ║%s\n", Yellow, privHex, Reset)
+// 	fmt.Printf("%s╚══════════════════════════════════════════════════════════╝%s\n", Green, Reset)
+	
+// 	f, err := os.OpenFile("caminho_formigo_v2.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+// 	if err == nil {
+// 		f.WriteString(fmt.Sprintf("Alvo: %s\nPriv: %s\nFormiga Batedora: %d\n---------------------\n", endereco, privHex, formigaID))
+// 		f.Close()
+// 	}
+// }
+
+// // ---------------------------------------------------------------------
+// // AS 4 ROTAS DE CAOS (ZIG-ZAG E RANDOM)
+// // ---------------------------------------------------------------------
+
+// // Formiga 0: Pulos 100% caóticos pelo mapa inteiro a cada ciclo.
+// func formigaCaosAbsoluto(alvo Alvo, wg *sync.WaitGroup, seed int64, id int) {
+// 	defer wg.Done()
+// 	rng := rand.New(rand.NewSource(seed))
+// 	rmd := ripemd160.New()
+	
+// 	atual := new(big.Int)
+// 	offset := new(big.Int)
+
+// 	for encontrada.Load() == 0 {
+// 		// Gera um offset aleatório entre 0 e RangeLen e soma ao RangeMin
+// 		offset.Rand(rng, alvo.RangeLen)
+// 		atual.Add(alvo.RangeMin, offset)
+
+// 		if verificarColisaoReal(atual, alvo.TargetPKH, rmd) {
+// 			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id)
+// 			return
+// 		}
+// 		chavesTestadas.Add(1)
+// 	}
+// }
+
+// // Formiga 1: Zig-Zag Crescente (Nasce no caos, anda pra frente com saltos irregulares)
+// func formigaZigZagCrescente(alvo Alvo, wg *sync.WaitGroup, seed int64, id int) {
+// 	defer wg.Done()
+// 	rng := rand.New(rand.NewSource(seed))
+// 	rmd := ripemd160.New()
+	
+// 	atual := new(big.Int)
+// 	offset := new(big.Int)
+// 	passo := new(big.Int)
+
+// 	// Pinball: Nasce em um lugar aleatório
+// 	offset.Rand(rng, alvo.RangeLen)
+// 	atual.Add(alvo.RangeMin, offset)
+
+// 	for encontrada.Load() == 0 {
+// 		if verificarColisaoReal(atual, alvo.TargetPKH, rmd) {
+// 			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id)
+// 			return
+// 		}
+
+// 		// Passo embriagado: Pula de 1 a 50.000 posições pra frente
+// 		salto := rng.Int63n(50000) + 1
+// 		passo.SetInt64(salto)
+// 		atual.Add(atual, passo)
+
+// 		// Se bater na parede final (RangeMax), sofre um ricochete para um novo ponto aleatório
+// 		if atual.Cmp(alvo.RangeMax) > 0 {
+// 			offset.Rand(rng, alvo.RangeLen)
+// 			atual.Add(alvo.RangeMin, offset)
+// 		}
+
+// 		chavesTestadas.Add(1)
+// 	}
+// }
+
+// // Formiga 2: Zig-Zag Decrescente (Nasce no caos, recua com saltos irregulares)
+// func formigaZigZagDecrescente(alvo Alvo, wg *sync.WaitGroup, seed int64, id int) {
+// 	defer wg.Done()
+// 	rng := rand.New(rand.NewSource(seed))
+// 	rmd := ripemd160.New()
+	
+// 	atual := new(big.Int)
+// 	offset := new(big.Int)
+// 	passo := new(big.Int)
+
+// 	offset.Rand(rng, alvo.RangeLen)
+// 	atual.Add(alvo.RangeMin, offset)
+
+// 	for encontrada.Load() == 0 {
+// 		if verificarColisaoReal(atual, alvo.TargetPKH, rmd) {
+// 			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id)
+// 			return
+// 		}
+
+// 		// Passo embriagado reverso
+// 		salto := rng.Int63n(50000) + 1
+// 		passo.SetInt64(salto)
+// 		atual.Sub(atual, passo)
+
+// 		// Se bater na parede inicial (RangeMin), sofre um ricochete aleatório
+// 		if atual.Cmp(alvo.RangeMin) < 0 {
+// 			offset.Rand(rng, alvo.RangeLen)
+// 			atual.Add(alvo.RangeMin, offset)
+// 		}
+
+// 		chavesTestadas.Add(1)
+// 	}
+// }
+
+// // Formiga 3: Onda Cruzada (Saltos gigantescos cobrindo frações maciças do terreno)
+// func formigaOndaCruzada(alvo Alvo, wg *sync.WaitGroup, seed int64, id int) {
+// 	defer wg.Done()
+// 	rng := rand.New(rand.NewSource(seed))
+// 	rmd := ripemd160.New()
+	
+// 	atual := new(big.Int)
+// 	offset := new(big.Int)
+	
+// 	for encontrada.Load() == 0 {
+// 		// Calcula um salto massivo no meio do caos para manter o calor distribuído
+// 		offset.Rand(rng, alvo.RangeLen)
+// 		atual.Add(alvo.RangeMin, offset)
+
+// 		if verificarColisaoReal(atual, alvo.TargetPKH, rmd) {
+// 			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id)
+// 			return
+// 		}
+// 		chavesTestadas.Add(1)
+// 	}
+// }
+
+
+//rotação tatica com relogio atomico, sem recriar threads, apenas mudando a função que cada formiga executa internamente. O relógio do comandante grita para as formigas mudarem de tática a cada X minutos, e elas obedecem sem precisar morrer e nascer de novo. O núcleo matemático permanece intacto, apenas a rota de caos muda dinamicamente.
 package main
 
 import (
@@ -337,25 +659,25 @@ const (
 
 var encontrada atomic.Uint32
 var chavesTestadas atomic.Uint64
+var cicloTaticoAtual atomic.Uint32 // O Relógio Atômico de Rotação
 
 type Alvo struct {
 	EnderecoTarget string
 	TargetPKH      [20]byte
 	RangeMin       *big.Int
 	RangeMax       *big.Int
-	RangeLen       *big.Int // O tamanho total do labirinto (Max - Min)
+	RangeLen       *big.Int
 }
 
-// Assinatura padrão para as rotas das formigas
-type TaticaFormiga func(alvo Alvo, wg *sync.WaitGroup, seed int64, formigaID int)
+// Nova assinatura: A tática agora recebe um RNG e RMD próprios para não gastar memória ao rotacionar
+type TaticaFormiga func(alvo Alvo, id int, ciclo uint32, rng *rand.Rand, rmd hash.Hash)
 
 func main() {
 	fmt.Print("\033[H\033[2J")
 	fmt.Println(Yellow + "=======================================================")
-	fmt.Println("   PROTOCOLO COLMEIA V2: ZIG-ZAG ESTOCÁSTICO MULTICORE ")
+	fmt.Println(" PROTOCOLO COLMEIA V2.5: MUTAÇÃO TÁTICA AUTOMATIZADA   ")
 	fmt.Println("=======================================================" + Reset)
 
-	// 1. Detecção de Hardware no Metal Nu
 	numCores := runtime.NumCPU()
 	fmt.Printf("%s[HARDWARE DETECTADO]%s %d Núcleos/Threads de Processamento\n\n", Cyan, Reset, numCores)
 
@@ -365,22 +687,29 @@ func main() {
 	reader.Scan()
 	threadCount, err := strconv.Atoi(strings.TrimSpace(reader.Text()))
 	if err != nil || threadCount < 1 {
-		threadCount = 1 // Proteção contra entradas inválidas
+		threadCount = 1
 	}
 
-	fmt.Printf("%s[2] Endereço BTC do Puzzle:%s ", Cyan, Reset)
+	fmt.Printf("%s[2] A cada quantos minutos as táticas devem rotacionar? (Ex: 5):%s ", Cyan, Reset)
+	reader.Scan()
+	rotacaoMinutos, err := strconv.Atoi(strings.TrimSpace(reader.Text()))
+	if err != nil || rotacaoMinutos < 1 {
+		rotacaoMinutos = 5 // Padrão seguro
+	}
+
+	fmt.Printf("%s[3] Endereço BTC do Puzzle:%s ", Cyan, Reset)
 	reader.Scan()
 	endereco := strings.TrimSpace(reader.Text())
 
-	fmt.Printf("%s[3] Range Mínimo (Hex):%s ", Cyan, Reset)
+	fmt.Printf("%s[4] Range Mínimo (Hex):%s ", Cyan, Reset)
 	reader.Scan()
 	minHex := strings.TrimSpace(reader.Text())
 
-	fmt.Printf("%s[4] Range Máximo (Hex):%s ", Cyan, Reset)
+	fmt.Printf("%s[5] Range Máximo (Hex):%s ", Cyan, Reset)
 	reader.Scan()
 	maxHex := strings.TrimSpace(reader.Text())
 
-	fmt.Printf("\n%sDeseja injetar as Formigas no Labirinto de Caos? (Y/N):%s ", Yellow, Reset)
+	fmt.Printf("\n%sAUTORIZAR INJEÇÃO TÁTICA MUTÁVEL? (Y/N):%s ", Yellow, Reset)
 	reader.Scan()
 	if strings.ToLower(strings.TrimSpace(reader.Text())) != "y" {
 		return
@@ -399,7 +728,6 @@ func main() {
 	minKey.SetString(minHex, 16)
 	maxKey.SetString(maxHex, 16)
 
-	// Calcula o tamanho real do terreno matemático
 	rangeLen := new(big.Int).Sub(maxKey, minKey)
 
 	alvo := Alvo{
@@ -423,8 +751,9 @@ func main() {
 	var wg sync.WaitGroup
 
 	go painelMetricas(startTime)
+	go relogioComandante(rotacaoMinutos) // Inicia o relógio de rotação automática
 
-	// Arsenal de Táticas Estocásticas
+	// O Arsenal
 	taticas := []TaticaFormiga{
 		formigaCaosAbsoluto,
 		formigaZigZagCrescente,
@@ -432,22 +761,26 @@ func main() {
 		formigaOndaCruzada,
 	}
 
-	// 2. Lançamento com Sementes independentes (Timestamp Mestre)
-	sementeMestre := time.Now().UnixNano()
-
-	// 3. Distribuição das Threads (Round-Robin)
+	// 1. Spawna os Trabalhadores "Containers". 
+	// Eles ficarão vivos o tempo todo e apenas trocarão de ferramenta (tática) internamente.
 	for i := 0; i < threadCount; i++ {
 		wg.Add(1)
-		taticaSelecionada := taticas[i%len(taticas)] // Distribui as táticas uniformemente
-		sementeIndividual := sementeMestre + int64(i*1000) // Semente temporal exclusiva
-		
-		go taticaSelecionada(alvo, &wg, sementeIndividual, i)
+		go formigaOperariaWrapper(alvo, &wg, i, taticas)
 	}
 
 	wg.Wait()
 
 	if encontrada.Load() == 0 {
 		fmt.Printf("\n%s[INFO] Labirinto infinito interrompido.%s\n", Yellow, Reset)
+	}
+}
+
+// O Relógio Central: Grita para a colmeia mudar de tática a cada X minutos
+func relogioComandante(minutos int) {
+	duracao := time.Duration(minutos) * time.Minute
+	for encontrada.Load() == 0 {
+		time.Sleep(duracao)
+		cicloTaticoAtual.Add(1) // Avança o ciclo de guerra
 	}
 }
 
@@ -458,15 +791,33 @@ func painelMetricas(start time.Time) {
 		elapsed := time.Since(start).Seconds()
 		chaves := chavesTestadas.Load()
 		speed := float64(chaves) / elapsed
+		ciclo := cicloTaticoAtual.Load()
 
-		fmt.Printf("\r%sPoder Estocástico:%s %.0f chaves/s | %sTempo:%s %.1fs ",
-			Yellow, Reset, speed, Cyan, Reset, elapsed)
+		fmt.Printf("\r%sPoder Estocástico:%s %.0f chaves/s | %sTempo:%s %.1fs | %sCiclo Tático:%s %d ",
+			Yellow, Reset, speed, Cyan, Reset, elapsed, Yellow, Reset, ciclo)
 	}
 }
 
 // ---------------------------------------------------------------------
-// NÚCLEO DE MATEMÁTICA BARE-METAL
+// NÚCLEO DE MATEMÁTICA BARE-METAL E GERENCIAMENTO
 // ---------------------------------------------------------------------
+
+// Wrapper Mestre: Esta função prende o núcleo da CPU e rotaciona as armas sem recriar threads
+func formigaOperariaWrapper(alvo Alvo, wg *sync.WaitGroup, id int, taticas []TaticaFormiga) {
+	defer wg.Done()
+	
+	// Alocação de memória Feita 1 ÚNICA VEZ por núcleo (Genialidade Bare-Metal)
+	rng := rand.New(rand.NewSource(time.Now().UnixNano() + int64(id*1000)))
+	rmd := ripemd160.New()
+
+	for encontrada.Load() == 0 {
+		cicloAtual := cicloTaticoAtual.Load()
+		taticaSorteada := taticas[rng.Intn(len(taticas))] // Sorteia a carta
+
+		// A formiga entra na tática e fica nela até o Comandante girar o relógio
+		taticaSorteada(alvo, id, cicloAtual, rng, rmd)
+	}
+}
 
 func verificarColisaoReal(privKey *big.Int, targetPKH [20]byte, rmd160 hash.Hash) bool {
 	privBytes := privKey.Bytes()
@@ -490,89 +841,79 @@ func verificarColisaoReal(privKey *big.Int, targetPKH [20]byte, rmd160 hash.Hash
 	return true
 }
 
-func salvarChaveEncontrada(privKey *big.Int, endereco string, formigaID int) {
+func salvarChaveEncontrada(privKey *big.Int, endereco string, formigaID int, nomeTatica string) {
 	encontrada.Store(1) 
 	privHex := fmt.Sprintf("%064x", privKey)
 	fmt.Printf("\n\n%s╔══════════════════════════════════════════════════════════╗%s\n", Green, Reset)
-	fmt.Printf("%s║ RAINHA CAPTURADA NO CAOS PELA FORMIGA [%d]!              ║%s\n", Green, formigaID, Reset)
+	fmt.Printf("%s║ RAINHA CAPTURADA PELA FORMIGA [%d]!                      ║%s\n", Green, formigaID, Reset)
+	fmt.Printf("%s║ TÁTICA DECISIVA: %-39s ║%s\n", Cyan, nomeTatica, Reset)
 	fmt.Printf("%s║ ENDEREÇO: %-46s ║%s\n", Green, endereco, Reset)
 	fmt.Printf("%s║ CHAVE: %-49s ║%s\n", Yellow, privHex, Reset)
 	fmt.Printf("%s╚══════════════════════════════════════════════════════════╝%s\n", Green, Reset)
 	
 	f, err := os.OpenFile("caminho_formigo_v2.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err == nil {
-		f.WriteString(fmt.Sprintf("Alvo: %s\nPriv: %s\nFormiga Batedora: %d\n---------------------\n", endereco, privHex, formigaID))
+		f.WriteString(fmt.Sprintf("Alvo: %s\nPriv: %s\nFormiga: %d\nTatica: %s\n---------------------\n", endereco, privHex, formigaID, nomeTatica))
 		f.Close()
 	}
 }
 
 // ---------------------------------------------------------------------
-// AS 4 ROTAS DE CAOS (ZIG-ZAG E RANDOM)
+// AS 4 ROTAS DE CAOS MUTÁVEL
 // ---------------------------------------------------------------------
 
-// Formiga 0: Pulos 100% caóticos pelo mapa inteiro a cada ciclo.
-func formigaCaosAbsoluto(alvo Alvo, wg *sync.WaitGroup, seed int64, id int) {
-	defer wg.Done()
-	rng := rand.New(rand.NewSource(seed))
-	rmd := ripemd160.New()
-	
+func formigaCaosAbsoluto(alvo Alvo, id int, meuCiclo uint32, rng *rand.Rand, rmd hash.Hash) {
 	atual := new(big.Int)
 	offset := new(big.Int)
 
-	for encontrada.Load() == 0 {
-		// Gera um offset aleatório entre 0 e RangeLen e soma ao RangeMin
+	for iter := uint64(0); encontrada.Load() == 0; iter++ {
+		// Bitwise Hack: Checa o relógio a cada 4096 chaves para não afogar a CPU
+		if iter&4095 == 0 {
+			if cicloTaticoAtual.Load() != meuCiclo { return }
+		}
+
 		offset.Rand(rng, alvo.RangeLen)
 		atual.Add(alvo.RangeMin, offset)
 
 		if verificarColisaoReal(atual, alvo.TargetPKH, rmd) {
-			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id)
+			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id, "Caos Absoluto")
 			return
 		}
 		chavesTestadas.Add(1)
 	}
 }
 
-// Formiga 1: Zig-Zag Crescente (Nasce no caos, anda pra frente com saltos irregulares)
-func formigaZigZagCrescente(alvo Alvo, wg *sync.WaitGroup, seed int64, id int) {
-	defer wg.Done()
-	rng := rand.New(rand.NewSource(seed))
-	rmd := ripemd160.New()
-	
+func formigaZigZagCrescente(alvo Alvo, id int, meuCiclo uint32, rng *rand.Rand, rmd hash.Hash) {
 	atual := new(big.Int)
 	offset := new(big.Int)
 	passo := new(big.Int)
 
-	// Pinball: Nasce em um lugar aleatório
 	offset.Rand(rng, alvo.RangeLen)
 	atual.Add(alvo.RangeMin, offset)
 
-	for encontrada.Load() == 0 {
+	for iter := uint64(0); encontrada.Load() == 0; iter++ {
+		if iter&4095 == 0 {
+			if cicloTaticoAtual.Load() != meuCiclo { return }
+		}
+
 		if verificarColisaoReal(atual, alvo.TargetPKH, rmd) {
-			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id)
+			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id, "Zig-Zag Crescente")
 			return
 		}
 
-		// Passo embriagado: Pula de 1 a 50.000 posições pra frente
 		salto := rng.Int63n(50000) + 1
 		passo.SetInt64(salto)
 		atual.Add(atual, passo)
 
-		// Se bater na parede final (RangeMax), sofre um ricochete para um novo ponto aleatório
 		if atual.Cmp(alvo.RangeMax) > 0 {
 			offset.Rand(rng, alvo.RangeLen)
 			atual.Add(alvo.RangeMin, offset)
 		}
-
 		chavesTestadas.Add(1)
 	}
 }
 
-// Formiga 2: Zig-Zag Decrescente (Nasce no caos, recua com saltos irregulares)
-func formigaZigZagDecrescente(alvo Alvo, wg *sync.WaitGroup, seed int64, id int) {
-	defer wg.Done()
-	rng := rand.New(rand.NewSource(seed))
-	rmd := ripemd160.New()
-	
+func formigaZigZagDecrescente(alvo Alvo, id int, meuCiclo uint32, rng *rand.Rand, rmd hash.Hash) {
 	atual := new(big.Int)
 	offset := new(big.Int)
 	passo := new(big.Int)
@@ -580,43 +921,42 @@ func formigaZigZagDecrescente(alvo Alvo, wg *sync.WaitGroup, seed int64, id int)
 	offset.Rand(rng, alvo.RangeLen)
 	atual.Add(alvo.RangeMin, offset)
 
-	for encontrada.Load() == 0 {
+	for iter := uint64(0); encontrada.Load() == 0; iter++ {
+		if iter&4095 == 0 {
+			if cicloTaticoAtual.Load() != meuCiclo { return }
+		}
+
 		if verificarColisaoReal(atual, alvo.TargetPKH, rmd) {
-			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id)
+			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id, "Zig-Zag Decrescente")
 			return
 		}
 
-		// Passo embriagado reverso
 		salto := rng.Int63n(50000) + 1
 		passo.SetInt64(salto)
 		atual.Sub(atual, passo)
 
-		// Se bater na parede inicial (RangeMin), sofre um ricochete aleatório
 		if atual.Cmp(alvo.RangeMin) < 0 {
 			offset.Rand(rng, alvo.RangeLen)
 			atual.Add(alvo.RangeMin, offset)
 		}
-
 		chavesTestadas.Add(1)
 	}
 }
 
-// Formiga 3: Onda Cruzada (Saltos gigantescos cobrindo frações maciças do terreno)
-func formigaOndaCruzada(alvo Alvo, wg *sync.WaitGroup, seed int64, id int) {
-	defer wg.Done()
-	rng := rand.New(rand.NewSource(seed))
-	rmd := ripemd160.New()
-	
+func formigaOndaCruzada(alvo Alvo, id int, meuCiclo uint32, rng *rand.Rand, rmd hash.Hash) {
 	atual := new(big.Int)
 	offset := new(big.Int)
 	
-	for encontrada.Load() == 0 {
-		// Calcula um salto massivo no meio do caos para manter o calor distribuído
+	for iter := uint64(0); encontrada.Load() == 0; iter++ {
+		if iter&4095 == 0 {
+			if cicloTaticoAtual.Load() != meuCiclo { return }
+		}
+
 		offset.Rand(rng, alvo.RangeLen)
 		atual.Add(alvo.RangeMin, offset)
 
 		if verificarColisaoReal(atual, alvo.TargetPKH, rmd) {
-			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id)
+			salvarChaveEncontrada(atual, alvo.EnderecoTarget, id, "Onda Cruzada")
 			return
 		}
 		chavesTestadas.Add(1)
